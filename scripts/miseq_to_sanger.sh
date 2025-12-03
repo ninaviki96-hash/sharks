@@ -93,6 +93,22 @@ fi
 
 mkdir -p "$(dirname "$PREFIX")"
 
+# Step 0: ensure reference is indexed for alignment and pileup
+missing_index=false
+for ext in amb ann bwt pac sa; do
+  [[ -f "${REF}.${ext}" ]] || missing_index=true
+done
+
+if [[ "$missing_index" == true ]]; then
+  echo "[INFO] BWA index for ${REF} not found. Building..." >&2
+  bwa index "$REF"
+fi
+
+if [[ ! -f "${REF}.fai" ]]; then
+  echo "[INFO] FASTA index for ${REF} not found. Building..." >&2
+  samtools faidx "$REF"
+fi
+
 # Step 1: adapter and quality trimming
 cutadapt \
   -j "$THREADS" \
