@@ -84,3 +84,55 @@ Using an output prefix like `results/sample1`, the pipeline writes:
 ```
 
 Outputs will include depth/variant summaries alongside BAM/VCF files to help confirm ONT scaffold correctness in variable regions without collapsing minor alleles.
+
+## ONT-to-Sanger alignment and polishing pipeline
+
+Use `scripts/ont_to_sanger.sh` to quality-filter ONT reads (via `filtlong`), align them to Sanger references with minimap2 `-ax map-ont` using reduced clipping penalties, call variants with allele depths preserved, and optionally polish a haploid consensus with racon and/or medaka while retaining an IUPAC consensus that reflects minor alleles.
+
+### Requirements
+- `minimap2`
+- `filtlong` (skip with `--skip-filtlong`)
+- `samtools`
+- `bcftools`
+- Optional: `racon` and `medaka` for polishing
+
+### Parameter guidance for common ONT datasets
+- Read length filtering: `--min-length 700-1000` and `--keep-percent 85-95` work well for typical ONT R9.4.1 runs with N50 around 8–15 kb while keeping high-quality subreads for amplicons of 600 bp–2 kb.
+- Alignment scoring to reduce over-clipping at variable ends:
+  - `--mm2-mismatch 3-4` (lower values retain more mismatches instead of clipping)
+  - `--mm2-gap-open 6,18-24` and `--mm2-gap-extend 2,1-2` to discourage aggressive soft-clipping across indels
+  - `--mm2-end-bonus 8-12` and `--mm2-zdrop 200,400` to reward full-length alignments on shorter amplicons.
+- Polishing: `--racon-rounds 1-2` provides a fast haploid polish; add `--medaka-model r941_min_high_g360` (or a model matching your flowcell/kit) to refine homopolymers after racon. The VCF/IUPAC consensus is still derived from the alignment to preserve low-frequency alleles for interpretation.
+
+### Example commands
+
+**Amplicons ~900 bp with ONT reads N50 ≈ 10 kb:**
+```bash
+./scripts/ont_to_sanger.sh \
+  -r references/IGHV_Sanger.fa \
+  -i data/ont_amplicons.fastq.gz \
+  -o results/sample1 \
+  --threads 8 \
+  --min-length 800 \
+  --keep-percent 90 \
+  --mm2-mismatch 3 \
+  --mm2-end-bonus 12 \
+  --racon-rounds 1
+```
+
+**Longer (~2 kb) amplicons with higher ONT N50 (~15 kb) and medaka polishing:**
+```bash
+./scripts/ont_to_sanger.sh \
+  -r references/Sanger_targets.fa \
+  -i data/ont_library.fastq.gz \
+  -o results/sample2 \
+  --threads 12 \
+  --min-length 1000 \
+  --keep-percent 85 \
+  --mm2-gap-open 6,18 \
+  --mm2-zdrop 250,500 \
+  --racon-rounds 2 \
+  --medaka-model r941_min_high_g360
+```
+
+Outputs include `results/sampleX.sorted.bam` (+ index) aligned with tuned clipping penalties, `results/sampleX.vcf.gz` with allele depths to retain minor variants, `results/sampleX.consensus.fasta` with IUPAC symbols, and optional racon/medaka polished FASTAs.
