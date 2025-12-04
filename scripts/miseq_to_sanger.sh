@@ -97,6 +97,7 @@ fi
 
 mkdir -p "$(dirname "$PREFIX")"
 
+codex/create-scripts-for-illumina-miseq-data-processing-mph3pn
 # Step 0: ensure reference (optionally copied to an index directory) is indexed
 REF_BASENAME=$(basename "$REF")
 if [[ -n "$INDEX_DIR" ]]; then
@@ -143,6 +144,23 @@ ensure_fasta_index() {
 
 ensure_bwa_index "$REF_FOR_ALIGN"
 ensure_fasta_index "$REF_FOR_ALIGN"
+=======
+# Step 0: ensure reference is indexed for alignment and pileup
+missing_index=false
+for ext in amb ann bwt pac sa; do
+  [[ -f "${REF}.${ext}" ]] || missing_index=true
+done
+
+if [[ "$missing_index" == true ]]; then
+  echo "[INFO] BWA index for ${REF} not found. Building..." >&2
+  bwa index "$REF"
+fi
+
+if [[ ! -f "${REF}.fai" ]]; then
+  echo "[INFO] FASTA index for ${REF} not found. Building..." >&2
+  samtools faidx "$REF"
+fi
+ main
 
 # Step 1: adapter and quality trimming
 cutadapt \
