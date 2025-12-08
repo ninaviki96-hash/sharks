@@ -5,7 +5,7 @@ usage() {
   cat <<'USAGE'
 Usage: miseq_to_sanger.sh -r <reference.fa> -1 <reads_R1.fastq.gz> -2 <reads_R2.fastq.gz> -o <output_prefix> [options]
 
-Trim adapters, quality-filter MiSeq reads, align to a Sanger reference, and emit a sorted BAM plus an IUPAC consensus that preserves low-frequency alleles.
+Trim adapters, quality-filter MiSeq reads, align to a Sanger reference, and emit a duplicate-marked BAM with coverage/variant summaries plus an IUPAC consensus that preserves low-frequency alleles.
 
 Required arguments:
   -r, --reference           Reference FASTA for the Sanger sequence(s)
@@ -26,8 +26,11 @@ Optional arguments:
 
 Outputs (using the provided prefix):
   <prefix>.trimmed_R1.fastq.gz / <prefix>.trimmed_R2.fastq.gz
-  <prefix>.sorted.bam (+ .bai)
+  <prefix>.sorted.markdup.bam (+ .bai) with duplicates flagged (not removed)
   <prefix>.vcf.gz (+ .tbi) with allele depths retained
+  <prefix>.coverage.txt from samtools coverage
+  <prefix>.variant_summary.tsv with key variant metrics
+  <prefix>.vcf.stats.txt from bcftools stats
   <prefix>.consensus.fasta (IUPAC-coded consensus so minor alleles are not collapsed)
 
 Dependencies: cutadapt, bwa, samtools, and bcftools must be installed and in PATH.
@@ -91,6 +94,21 @@ if [[ -z "${REF:-}" || -z "${READ1:-}" || -z "${READ2:-}" || -z "${PREFIX:-}" ]]
   exit 1
 fi
 
+# Sanity checks for required tools and inputs to avoid cryptic downstream errors
+for tool in cutadapt bwa samtools bcftools; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "Error: '$tool' is not in PATH. Please install it or activate the appropriate environment." >&2
+    exit 1
+  fi
+done
+
+for f in "$REF" "$READ1" "$READ2"; do
+  if [[ ! -f "$f" ]]; then
+    echo "Error: input file not found: $f" >&2
+    exit 1
+  fi
+done
+
 mkdir -p "$(dirname "$PREFIX")"
 
 # Step 1: adapter and quality trimming
@@ -113,14 +131,23 @@ bwa mem \
   "$REF" "${PREFIX}.trimmed_R1.fastq.gz" "${PREFIX}.trimmed_R2.fastq.gz" \
   | samtools view -b -o "${PREFIX}.unsorted.bam" -
 
-samtools sort -@ "$THREADS" -o "${PREFIX}.sorted.bam" "${PREFIX}.unsorted.bam"
-samtools index "${PREFIX}.sorted.bam"
-rm -f "${PREFIX}.unsorted.bam"
+samtools sort -n -@ "$THREADS" -o "${PREFIX}.namesort.bam" "${PREFIX}.unsorted.bam"
+samtools fixmate -m "${PREFIX}.namesort.bam" "${PREFIX}.fixmate.bam"
+samtools sort -@ "$THREADS" -o "${PREFIX}.positionsort.bam" "${PREFIX}.fixmate.bam"
+samtools markdup -@ "$THREADS" -s "${PREFIX}.positionsort.bam" "${PREFIX}.sorted.markdup.bam"
+samtools index "${PREFIX}.sorted.markdup.bam"
+
+rm -f "${PREFIX}.unsorted.bam" "${PREFIX}.namesort.bam" "${PREFIX}.fixmate.bam" "${PREFIX}.positionsort.bam"
 
 # Step 3: variant calling with allele depths retained
-bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.bam" \
+bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
   | bcftools call -mv --ploidy 1 --keep-alts --multiallelic-caller -Oz -o "${PREFIX}.vcf.gz"
 bcftools index "${PREFIX}.vcf.gz"
+
+# Coverage and variant summaries to validate alignments and support phylogeny building
+samtools coverage "${PREFIX}.sorted.markdup.bam" > "${PREFIX}.coverage.txt"
+bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%INFO/DP\t[%AD]\n' "${PREFIX}.vcf.gz" > "${PREFIX}.variant_summary.tsv"
+bcftools stats "${PREFIX}.vcf.gz" > "${PREFIX}.vcf.stats.txt"
 
 # Step 4: consensus with IUPAC codes so low-frequency alleles remain represented
 bcftools consensus --iupac-codes -f "$REF" "${PREFIX}.vcf.gz" > "${PREFIX}.consensus.fasta"
