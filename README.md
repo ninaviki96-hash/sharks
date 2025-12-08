@@ -4,7 +4,7 @@ cDNA processing kit for immunology.
 
 ## MiSeq-to-Sanger alignment pipeline
 
-Use `scripts/miseq_to_sanger.sh` to trim adapters, quality-filter MiSeq reads, align them to Sanger reference sequences, and emit both sorted BAM files and IUPAC-coded consensus FASTAs so low-frequency alleles remain represented instead of being collapsed away.
+Use `scripts/miseq_to_sanger.sh` to trim adapters, quality-filter MiSeq reads, align them to Sanger reference sequences, and emit duplicate-marked BAM/coverage/variant summaries plus IUPAC-coded consensus FASTAs so low-frequency alleles remain represented instead of being collapsed away.
 
 ### Requirements
 - `cutadapt`
@@ -37,7 +37,31 @@ For paired-end 2×250 bp MiSeq reads from an IGHV amplicon aligned to a Sanger r
   --min-length 120
 ```
 
-Outputs will include `results/sample1.sorted.bam` (+ index), `results/sample1.vcf.gz` with allele depths, and `results/sample1.consensus.fasta` containing IUPAC symbols where minor alleles are detected.
+Outputs will include `results/sample1.sorted.markdup.bam` (+ index), `results/sample1.vcf.gz` with allele depths, `results/sample1.coverage.txt`, `results/sample1.variant_summary.tsv`, `results/sample1.vcf.stats.txt`, and `results/sample1.consensus.fasta` containing IUPAC symbols where minor alleles are detected.
+
+## MiSeq-to-Sanger alignment for pre-trimmed reads
+
+Use `scripts/miseq_trimmed_to_sanger.sh` when adapter/quality trimming has already been done. The script will build a BWA index for the provided Sanger FASTA if it is missing, align trimmed MiSeq reads with permissive penalties to retain rare variants, and output a sorted BAM, VCF with allele depths, and an IUPAC consensus FASTA.
+
+### Requirements
+- `bwa`
+- `samtools`
+- `bcftools`
+
+### Example command
+
+```bash
+./scripts/miseq_trimmed_to_sanger.sh \
+  -r references/IGHV_Sanger.fa \
+  -1 data/sample_trimmed_R1.fastq.gz \
+  -2 data/sample_trimmed_R2.fastq.gz \
+  -o results/sample1 \
+  --threads 8 \
+  --mismatch-penalty 2 \
+  --clip-penalty 3
+```
+
+Outputs will include `results/sample1.sorted.bam` (+ index), `results/sample1.vcf.gz` with allele depths, and `results/sample1.consensus.fasta` with IUPAC symbols representing minor alleles.
 
 ## MiSeq-to-ONT contig validation pipeline
 
