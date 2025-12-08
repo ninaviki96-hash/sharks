@@ -79,6 +79,7 @@ if [[ -z "${REF:-}" || -z "${READ1:-}" || -z "${READ2:-}" || -z "${PREFIX:-}" ]]
   exit 1
 fi
 
+ codex/-miseq-8g10ev
 for tool in bwa samtools bcftools; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "Error: '$tool' is not in PATH. Please install it or activate the appropriate environment." >&2
@@ -103,6 +104,9 @@ if ! touch "$OUT_DIR/.write_test" 2>/dev/null; then
   exit 1
 fi
 rm -f "$OUT_DIR/.write_test"
+=======
+mkdir -p "$(dirname "$PREFIX")"
+ main
 
 # Step 1: ensure a BWA index exists for the Sanger reference
 bwa_index_missing() {
