@@ -5,8 +5,8 @@ usage() {
   cat <<'USAGE'
 Usage: miseq_to_ont.sh -r <ont_contigs.fa> -1 <reads_R1.fastq.gz> -2 <reads_R2.fastq.gz> -o <output_prefix> [options]
 
-Trim adapters, quality-filter MiSeq reads, align to ONT contigs with BWA-MEM or minimap2 (sr preset), and emit variant calls
-with coverage/variant summaries tuned for sensitivity in variable regions.
+Trim adapters, quality-filter MiSeq reads, align to ONT contigs with BWA-MEM (default) or minimap2 (sr preset), and emit
+variant calls with coverage/variant summaries tuned for sensitivity in variable regions.
 
 Required arguments:
   -r, --reference           ONT contig/reference FASTA
@@ -19,7 +19,7 @@ Optional arguments:
       --min-quality         Phred quality cutoff for 3' trimming (default: 20)
       --min-length          Discard reads shorter than this after trimming (default: 100)
       --threads             Number of CPU threads (default: 4)
-      --aligner             "minimap2" or "bwa" (default: minimap2)
+      --aligner             "bwa" or "minimap2" (default: bwa)
       --mismatch-penalty    BWA-MEM mismatch penalty -B (default: 3)
       --gap-open-penalty    BWA-MEM gap open penalties -O (default: 6)
       --gap-extend-penalty  BWA-MEM gap extension penalties -E (default: 1)
@@ -35,8 +35,9 @@ Outputs (using the provided prefix):
   <prefix>.coverage.txt from samtools coverage
   <prefix>.variant_summary.tsv with key variant metrics
   <prefix>.vcf.stats.txt from bcftools stats
+  <prefix>.consensus.fasta (IUPAC-coded consensus so minor alleles are not collapsed)
 
-Dependencies: cutadapt, minimap2 or bwa, samtools, and bcftools must be installed and in PATH.
+Dependencies: cutadapt, bwa or minimap2, samtools, and bcftools must be installed and in PATH.
 USAGE
 }
 
@@ -45,7 +46,7 @@ ADAPTER="AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
 MIN_QUAL=20
 MIN_LEN=100
 THREADS=4
-ALIGNER="minimap2"
+ALIGNER="bwa"
 MISMATCH=3
 GAP_OPEN=6
 GAP_EXT=1
@@ -106,6 +107,42 @@ if [[ -z "${REF:-}" || -z "${READ1:-}" || -z "${READ2:-}" || -z "${PREFIX:-}" ]]
   exit 1
 fi
 
+# Normalize the prefix to avoid hidden filenames when a trailing slash is supplied
+PREFIX="${PREFIX%/}"
+if [[ -z "$PREFIX" ]]; then
+  echo "Error: output prefix cannot be empty after normalization." >&2
+  exit 1
+fi
+
+for tool in cutadapt samtools bcftools; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "Error: '$tool' is not in PATH. Please install it or activate the appropriate environment." >&2
+    exit 1
+  fi
+done
+
+if [[ "$ALIGNER" == "bwa" ]]; then
+  if ! command -v bwa >/dev/null 2>&1; then
+    echo "Error: 'bwa' is not in PATH but is required for --aligner bwa." >&2
+    exit 1
+  fi
+elif [[ "$ALIGNER" == "minimap2" ]]; then
+  if ! command -v minimap2 >/dev/null 2>&1; then
+    echo "Error: 'minimap2' is not in PATH but is required for --aligner minimap2." >&2
+    exit 1
+  fi
+else
+  echo "Unsupported aligner: $ALIGNER (choose 'minimap2' or 'bwa')." >&2
+  exit 1
+fi
+
+for f in "$REF" "$READ1" "$READ2"; do
+  if [[ ! -f "$f" ]]; then
+    echo "Error: input file not found: $f" >&2
+    exit 1
+  fi
+done
+
 if [[ -n "$DOWNSAMPLE" ]]; then
   if ! [[ "$DOWNSAMPLE" =~ ^0?\.[0-9]+$ ]]; then
     echo "--downsample-fraction must be between 0 and 1 (exclusive)." >&2
@@ -122,7 +159,16 @@ PY
   DOWNSAMPLE_FMT="${DOWNSAMPLE_SEED}.${DOWNSAMPLE#0.}"
 fi
 
-mkdir -p "$(dirname "$PREFIX")"
+OUT_DIR="$(dirname "$PREFIX")"
+if ! mkdir -p "$OUT_DIR"; then
+  echo "Error: could not create output directory: $OUT_DIR" >&2
+  exit 1
+fi
+if ! touch "$OUT_DIR/.write_test" 2>/dev/null; then
+  echo "Error: output directory is not writable: $OUT_DIR" >&2
+  exit 1
+fi
+rm -f "$OUT_DIR/.write_test"
 
 # Step 1: adapter and quality trimming
 cutadapt \
@@ -178,5 +224,8 @@ bcftools index "${PREFIX}.vcf.gz"
 samtools coverage "${PREFIX}.sorted.markdup.bam" > "${PREFIX}.coverage.txt"
 bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%INFO/DP\t[%AD]\n' "${PREFIX}.vcf.gz" > "${PREFIX}.variant_summary.tsv"
 bcftools stats "${PREFIX}.vcf.gz" > "${PREFIX}.vcf.stats.txt"
+
+# IUPAC-coded consensus so low-frequency alleles remain represented
+bcftools consensus --iupac-codes -f "$REF" "${PREFIX}.vcf.gz" > "${PREFIX}.consensus.fasta"
 
 echo "Pipeline complete. Outputs written with prefix ${PREFIX}".
