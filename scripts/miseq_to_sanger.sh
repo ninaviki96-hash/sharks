@@ -98,7 +98,10 @@ if [[ -z "${REF:-}" || -z "${READ1:-}" || -z "${READ2:-}" || -z "${PREFIX:-}" ]]
   exit 1
 fi
 
+ codex/-miseq-dogg7t
+=======
 codex/-miseq-r8twkl
+main
 # Normalize the prefix to avoid hidden filenames when a trailing slash is supplied
 PREFIX="${PREFIX%/}"
 if [[ -z "$PREFIX" ]]; then
@@ -106,6 +109,14 @@ if [[ -z "$PREFIX" ]]; then
   exit 1
 fi
 
+codex/-miseq-dogg7t
+# Derive an output directory without invoking dirname (to avoid option parsing issues
+# when a prefix begins with '-'), and ensure it exists/writable
+OUT_DIR="${PREFIX%/*}"
+if [[ "$OUT_DIR" == "$PREFIX" ]]; then
+  OUT_DIR="."
+fi
+=======
 =======
  main
 # Sanity checks for required tools and inputs to avoid cryptic downstream errors
@@ -128,6 +139,7 @@ done
 codex/-miseq-8g10ev
 main
 OUT_DIR="$(dirname "$PREFIX")"
+ main
 if ! mkdir -p "$OUT_DIR"; then
   echo "Error: could not create output directory: $OUT_DIR" >&2
   exit 1
@@ -137,6 +149,23 @@ if ! touch "$OUT_DIR/.write_test" 2>/dev/null; then
   exit 1
 fi
 rm -f "$OUT_DIR/.write_test"
+codex/-miseq-dogg7t
+
+# Sanity checks for required tools and inputs to avoid cryptic downstream errors
+for tool in cutadapt bwa samtools bcftools; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "Error: '$tool' is not in PATH. Please install it or activate the appropriate environment." >&2
+    exit 1
+  fi
+done
+
+for f in "$REF" "$READ1" "$READ2"; do
+  if [[ ! -f "$f" ]]; then
+    echo "Error: input file not found: $f" >&2
+    exit 1
+  fi
+done
+=======
  codex/-miseq-r8twkl
 =======
 =======
@@ -208,6 +237,7 @@ if [[ ! -f "${REF}.fai" ]]; then
 fi
  main
  main
+ main
 
 # Step 1: adapter and quality trimming
 cutadapt \
@@ -238,6 +268,9 @@ samtools index "${PREFIX}.sorted.markdup.bam"
 rm -f "${PREFIX}.unsorted.bam" "${PREFIX}.namesort.bam" "${PREFIX}.fixmate.bam" "${PREFIX}.positionsort.bam"
 
 # Step 3: variant calling with allele depths retained
+codex/-miseq-dogg7t
+bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
+=======
  codex/-miseq-r8twkl
 bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
 =======
@@ -259,6 +292,7 @@ bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF_FOR_ALIGN" "${PREFIX}.sorted.bam"
  main
  main
  main
+main
   | bcftools call -mv --ploidy 1 --keep-alts --multiallelic-caller -Oz -o "${PREFIX}.vcf.gz"
 bcftools index "${PREFIX}.vcf.gz"
 
