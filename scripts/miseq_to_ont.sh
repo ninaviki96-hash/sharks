@@ -107,6 +107,35 @@ if [[ -z "${REF:-}" || -z "${READ1:-}" || -z "${READ2:-}" || -z "${PREFIX:-}" ]]
   exit 1
 fi
 
+for tool in cutadapt samtools bcftools; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "Error: '$tool' is not in PATH. Please install it or activate the appropriate environment." >&2
+    exit 1
+  fi
+done
+
+if [[ "$ALIGNER" == "bwa" ]]; then
+  if ! command -v bwa >/dev/null 2>&1; then
+    echo "Error: 'bwa' is not in PATH but is required for --aligner bwa." >&2
+    exit 1
+  fi
+elif [[ "$ALIGNER" == "minimap2" ]]; then
+  if ! command -v minimap2 >/dev/null 2>&1; then
+    echo "Error: 'minimap2' is not in PATH but is required for --aligner minimap2." >&2
+    exit 1
+  fi
+else
+  echo "Unsupported aligner: $ALIGNER (choose 'minimap2' or 'bwa')." >&2
+  exit 1
+fi
+
+for f in "$REF" "$READ1" "$READ2"; do
+  if [[ ! -f "$f" ]]; then
+    echo "Error: input file not found: $f" >&2
+    exit 1
+  fi
+done
+
 if [[ -n "$DOWNSAMPLE" ]]; then
   if ! [[ "$DOWNSAMPLE" =~ ^0?\.[0-9]+$ ]]; then
     echo "--downsample-fraction must be between 0 and 1 (exclusive)." >&2
@@ -123,7 +152,16 @@ PY
   DOWNSAMPLE_FMT="${DOWNSAMPLE_SEED}.${DOWNSAMPLE#0.}"
 fi
 
-mkdir -p "$(dirname "$PREFIX")"
+OUT_DIR="$(dirname "$PREFIX")"
+if ! mkdir -p "$OUT_DIR"; then
+  echo "Error: could not create output directory: $OUT_DIR" >&2
+  exit 1
+fi
+if ! touch "$OUT_DIR/.write_test" 2>/dev/null; then
+  echo "Error: output directory is not writable: $OUT_DIR" >&2
+  exit 1
+fi
+rm -f "$OUT_DIR/.write_test"
 
 # Step 1: adapter and quality trimming
 cutadapt \

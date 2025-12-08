@@ -113,7 +113,20 @@ for f in "$REF" "$READ1" "$READ2"; do
   fi
 done
 
+codex/-miseq-8g10ev
+OUT_DIR="$(dirname "$PREFIX")"
+if ! mkdir -p "$OUT_DIR"; then
+  echo "Error: could not create output directory: $OUT_DIR" >&2
+  exit 1
+fi
+if ! touch "$OUT_DIR/.write_test" 2>/dev/null; then
+  echo "Error: output directory is not writable: $OUT_DIR" >&2
+  exit 1
+fi
+rm -f "$OUT_DIR/.write_test"
+=======
 mkdir -p "$(dirname "$PREFIX")"
+ main
 
 codex/create-scripts-for-illumina-miseq-data-processing-mph3pn
 # Step 0: ensure reference (optionally copied to an index directory) is indexed
@@ -209,6 +222,9 @@ samtools index "${PREFIX}.sorted.markdup.bam"
 rm -f "${PREFIX}.unsorted.bam" "${PREFIX}.namesort.bam" "${PREFIX}.fixmate.bam" "${PREFIX}.positionsort.bam"
 
 # Step 3: variant calling with allele depths retained
+ codex/-miseq-8g10ev
+bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
+=======
 codex/-miseq-kzyvu1
 bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
 =======
@@ -219,6 +235,7 @@ bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
 bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
 =======
 bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF_FOR_ALIGN" "${PREFIX}.sorted.bam" \
+ main
  main
  main
  main
