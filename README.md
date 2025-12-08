@@ -37,6 +37,12 @@ For paired-end 2×250 bp MiSeq reads from an IGHV amplicon aligned to a Sanger r
   --min-length 120
 ```
 
+ codex/-miseq-r8twkl
+Use an output prefix such as `results/sample1` without a trailing slash; the scripts will normalize the prefix and create parent
+directories automatically so files land beside the chosen prefix rather than as hidden dotfiles.
+
+=======
+ main
 Outputs will include `results/sample1.sorted.markdup.bam` (+ index), `results/sample1.vcf.gz` with allele depths, `results/sample1.coverage.txt`, `results/sample1.variant_summary.tsv`, `results/sample1.vcf.stats.txt`, and `results/sample1.consensus.fasta` containing IUPAC symbols where minor alleles are detected.
 
 ## MiSeq-to-Sanger alignment for pre-trimmed reads

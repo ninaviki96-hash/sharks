@@ -98,6 +98,16 @@ if [[ -z "${REF:-}" || -z "${READ1:-}" || -z "${READ2:-}" || -z "${PREFIX:-}" ]]
   exit 1
 fi
 
+codex/-miseq-r8twkl
+# Normalize the prefix to avoid hidden filenames when a trailing slash is supplied
+PREFIX="${PREFIX%/}"
+if [[ -z "$PREFIX" ]]; then
+  echo "Error: output prefix cannot be empty after normalization." >&2
+  exit 1
+fi
+
+=======
+ main
 # Sanity checks for required tools and inputs to avoid cryptic downstream errors
 for tool in cutadapt bwa samtools bcftools; do
   if ! command -v "$tool" >/dev/null 2>&1; then
@@ -113,7 +123,10 @@ for f in "$REF" "$READ1" "$READ2"; do
   fi
 done
 
+ codex/-miseq-r8twkl
+=======
 codex/-miseq-8g10ev
+main
 OUT_DIR="$(dirname "$PREFIX")"
 if ! mkdir -p "$OUT_DIR"; then
   echo "Error: could not create output directory: $OUT_DIR" >&2
@@ -124,6 +137,8 @@ if ! touch "$OUT_DIR/.write_test" 2>/dev/null; then
   exit 1
 fi
 rm -f "$OUT_DIR/.write_test"
+ codex/-miseq-r8twkl
+=======
 =======
 mkdir -p "$(dirname "$PREFIX")"
  main
@@ -192,6 +207,7 @@ if [[ ! -f "${REF}.fai" ]]; then
   samtools faidx "$REF"
 fi
  main
+ main
 
 # Step 1: adapter and quality trimming
 cutadapt \
@@ -222,6 +238,9 @@ samtools index "${PREFIX}.sorted.markdup.bam"
 rm -f "${PREFIX}.unsorted.bam" "${PREFIX}.namesort.bam" "${PREFIX}.fixmate.bam" "${PREFIX}.positionsort.bam"
 
 # Step 3: variant calling with allele depths retained
+ codex/-miseq-r8twkl
+bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
+=======
  codex/-miseq-8g10ev
 bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
 =======
@@ -235,6 +254,7 @@ bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
 bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
 =======
 bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF_FOR_ALIGN" "${PREFIX}.sorted.bam" \
+ main
  main
  main
  main

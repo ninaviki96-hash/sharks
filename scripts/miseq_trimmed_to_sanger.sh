@@ -79,7 +79,17 @@ if [[ -z "${REF:-}" || -z "${READ1:-}" || -z "${READ2:-}" || -z "${PREFIX:-}" ]]
   exit 1
 fi
 
+ codex/-miseq-r8twkl
+# Normalize the prefix to avoid hidden filenames when a trailing slash is supplied
+PREFIX="${PREFIX%/}"
+if [[ -z "$PREFIX" ]]; then
+  echo "Error: output prefix cannot be empty after normalization." >&2
+  exit 1
+fi
+
+=======
  codex/-miseq-8g10ev
+ main
 for tool in bwa samtools bcftools; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "Error: '$tool' is not in PATH. Please install it or activate the appropriate environment." >&2
@@ -104,9 +114,12 @@ if ! touch "$OUT_DIR/.write_test" 2>/dev/null; then
   exit 1
 fi
 rm -f "$OUT_DIR/.write_test"
+ codex/-miseq-r8twkl
+=======
 =======
 mkdir -p "$(dirname "$PREFIX")"
  main
+main
 
 # Step 1: ensure a BWA index exists for the Sanger reference
 bwa_index_missing() {
