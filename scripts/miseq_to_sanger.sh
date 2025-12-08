@@ -194,10 +194,14 @@ samtools index "${PREFIX}.sorted.markdup.bam"
 rm -f "${PREFIX}.unsorted.bam" "${PREFIX}.namesort.bam" "${PREFIX}.fixmate.bam" "${PREFIX}.positionsort.bam"
 
 # Step 3: variant calling with allele depths retained
+codex/-miseq-1hofbl
+bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
+=======
  codex/-miseq
 bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
 =======
 bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF_FOR_ALIGN" "${PREFIX}.sorted.bam" \
+ main
  main
   | bcftools call -mv --ploidy 1 --keep-alts --multiallelic-caller -Oz -o "${PREFIX}.vcf.gz"
 bcftools index "${PREFIX}.vcf.gz"
