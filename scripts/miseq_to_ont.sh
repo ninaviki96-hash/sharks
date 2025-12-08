@@ -107,6 +107,7 @@ if [[ -z "${REF:-}" || -z "${READ1:-}" || -z "${READ2:-}" || -z "${PREFIX:-}" ]]
   exit 1
 fi
 
+codex/-miseq-r8twkl
 # Normalize the prefix to avoid hidden filenames when a trailing slash is supplied
 PREFIX="${PREFIX%/}"
 if [[ -z "$PREFIX" ]]; then
@@ -114,6 +115,8 @@ if [[ -z "$PREFIX" ]]; then
   exit 1
 fi
 
+=======
+main
 for tool in cutadapt samtools bcftools; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "Error: '$tool' is not in PATH. Please install it or activate the appropriate environment." >&2
