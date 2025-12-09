@@ -107,6 +107,50 @@ if [[ -z "${REF:-}" || -z "${READ1:-}" || -z "${READ2:-}" || -z "${PREFIX:-}" ]]
   exit 1
 fi
 
+< codex/-miseq-lvc8lw
+  # Normalize the prefix to avoid hidden filenames when a trailing slash is supplied
+  PREFIX="${PREFIX%/}"
+  if [[ -z "$PREFIX" ]]; then
+    echo "Error: output prefix cannot be empty after normalization." >&2
+    exit 1
+  fi
+
+  # Split the prefix into directory and basename without invoking dirname (dash-safe),
+  # then resolve to an absolute prefix so leading dashes in the basename cannot be
+  # misinterpreted as options by downstream tools. Also ensure the parent directory
+  # exists and is writable.
+  if [[ "$PREFIX" == */* ]]; then
+    OUT_DIR_RAW="${PREFIX%/*}"
+    PREFIX_BASENAME="${PREFIX##*/}"
+  else
+    OUT_DIR_RAW="."
+    PREFIX_BASENAME="$PREFIX"
+  fi
+
+  if [[ -z "$PREFIX_BASENAME" ]]; then
+    echo "Error: output prefix basename cannot be empty." >&2
+    exit 1
+  fi
+
+  if ! mkdir -p -- "$OUT_DIR_RAW"; then
+    echo "Error: could not create output directory: $OUT_DIR_RAW" >&2
+    exit 1
+  fi
+
+  if ! OUT_DIR="$(cd -- "$OUT_DIR_RAW" && pwd)"; then
+    echo "Error: could not resolve output directory: $OUT_DIR_RAW" >&2
+    exit 1
+  fi
+
+  PREFIX="${OUT_DIR}/${PREFIX_BASENAME}"
+
+  if ! touch "${OUT_DIR}/.write_test" 2>/dev/null; then
+    echo "Error: output directory is not writable: $OUT_DIR" >&2
+    exit 1
+  fi
+  rm -f "${OUT_DIR}/.write_test"
+
+=======
  codex/-miseq-dogg7t
 =======
 codex/-miseq-r8twkl
@@ -139,6 +183,7 @@ rm -f "$OUT_DIR/.write_test"
 =======
 main
 main
+> main
 for tool in cutadapt samtools bcftools; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "Error: '$tool' is not in PATH. Please install it or activate the appropriate environment." >&2
