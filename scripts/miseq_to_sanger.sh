@@ -22,6 +22,7 @@ Optional arguments:
       --gap-open-penalty    BWA-MEM gap open penalties -O (default: 6)
       --gap-extend-penalty  BWA-MEM gap extension penalties -E (default: 1)
       --clip-penalty        BWA-MEM clipping penalty -L (default: 5)
+      --index-dir           Directory to write/read reference indexes (default: alongside reference)
   -h, --help                Show this help message
 
 Outputs (using the provided prefix):
@@ -46,6 +47,7 @@ MISMATCH=3
 GAP_OPEN=6
 GAP_EXT=1
 CLIP=5
+INDEX_DIR=""
 
 # Parse arguments
 if [[ $# -eq 0 ]]; then
@@ -79,6 +81,8 @@ while [[ $# -gt 0 ]]; do
       GAP_EXT="$2"; shift 2;;
     --clip-penalty)
       CLIP="$2"; shift 2;;
+    --index-dir)
+      INDEX_DIR="$2"; shift 2;;
     -h|--help)
       usage; exit 0;;
     *)
@@ -94,6 +98,16 @@ if [[ -z "${REF:-}" || -z "${READ1:-}" || -z "${READ2:-}" || -z "${PREFIX:-}" ]]
   exit 1
 fi
 
+< codex/-miseq-t0x3ex
+=======
+< codex/-miseq-lvc8lw
+=======
+ codex/-miseq-dogg7t
+=======
+codex/-miseq-r8twkl
+main
+> main
+> main
 # Normalize the prefix to avoid hidden filenames when a trailing slash is supplied
 PREFIX="${PREFIX%/}"
 if [[ -z "$PREFIX" ]]; then
@@ -101,6 +115,10 @@ if [[ -z "$PREFIX" ]]; then
   exit 1
 fi
 
+< codex/-miseq-t0x3ex
+=======
+< codex/-miseq-lvc8lw
+> main
 # Split the prefix into directory and basename without invoking dirname (dash-safe),
 # then resolve to an absolute prefix so leading dashes in the basename cannot be
 # misinterpreted as options by downstream tools. Also ensure the parent directory
@@ -113,11 +131,14 @@ else
   PREFIX_BASENAME="$PREFIX"
 fi
 
+< codex/-miseq-t0x3ex
 # Expand a leading tilde for users who supply home-relative paths.
 if [[ "$OUT_DIR_RAW" == ~* ]]; then
   OUT_DIR_RAW="${OUT_DIR_RAW/#\~/$HOME}"
 fi
 
+=======
+> main
 if [[ -z "$PREFIX_BASENAME" ]]; then
   echo "Error: output prefix basename cannot be empty." >&2
   exit 1
@@ -140,6 +161,52 @@ if ! touch "${OUT_DIR}/.write_test" 2>/dev/null; then
   exit 1
 fi
 rm -f "${OUT_DIR}/.write_test"
+< codex/-miseq-t0x3ex
+=======
+=======
+codex/-miseq-dogg7t
+# Derive an output directory without invoking dirname (to avoid option parsing issues
+# when a prefix begins with '-'), and ensure it exists/writable
+OUT_DIR="${PREFIX%/*}"
+if [[ "$OUT_DIR" == "$PREFIX" ]]; then
+  OUT_DIR="."
+fi
+=======
+=======
+ main
+# Sanity checks for required tools and inputs to avoid cryptic downstream errors
+for tool in cutadapt bwa samtools bcftools; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "Error: '$tool' is not in PATH. Please install it or activate the appropriate environment." >&2
+    exit 1
+  fi
+done
+
+for f in "$REF" "$READ1" "$READ2"; do
+  if [[ ! -f "$f" ]]; then
+    echo "Error: input file not found: $f" >&2
+    exit 1
+  fi
+done
+
+ codex/-miseq-r8twkl
+=======
+codex/-miseq-8g10ev
+main
+OUT_DIR="$(dirname "$PREFIX")"
+ main
+if ! mkdir -p "$OUT_DIR"; then
+  echo "Error: could not create output directory: $OUT_DIR" >&2
+  exit 1
+fi
+if ! touch "$OUT_DIR/.write_test" 2>/dev/null; then
+  echo "Error: output directory is not writable: $OUT_DIR" >&2
+  exit 1
+fi
+rm -f "$OUT_DIR/.write_test"
+codex/-miseq-dogg7t
+> main
+> main
 
 # Sanity checks for required tools and inputs to avoid cryptic downstream errors
 for tool in cutadapt bwa samtools bcftools; do
@@ -155,6 +222,85 @@ for f in "$REF" "$READ1" "$READ2"; do
     exit 1
   fi
 done
+< codex/-miseq-t0x3ex
+=======
+< codex/-miseq-lvc8lw
+=======
+=======
+ codex/-miseq-r8twkl
+=======
+=======
+mkdir -p "$(dirname "$PREFIX")"
+ main
+
+codex/create-scripts-for-illumina-miseq-data-processing-mph3pn
+# Step 0: ensure reference (optionally copied to an index directory) is indexed
+REF_BASENAME=$(basename "$REF")
+if [[ -n "$INDEX_DIR" ]]; then
+  mkdir -p "$INDEX_DIR"
+  REF_FOR_ALIGN="$INDEX_DIR/$REF_BASENAME"
+  if [[ ! -e "$REF_FOR_ALIGN" || "$REF_FOR_ALIGN" -ot "$REF" ]]; then
+    echo "[INFO] Copying reference to index directory: $REF_FOR_ALIGN" >&2
+    cp "$REF" "$REF_FOR_ALIGN"
+  fi
+else
+  INDEX_DIR=$(dirname "$REF")
+  REF_FOR_ALIGN="$REF"
+fi
+
+ensure_bwa_index() {
+  local ref_path="$1"
+  local missing=false
+  for ext in amb ann bwt pac sa; do
+    [[ -f "${ref_path}.${ext}" ]] || missing=true
+  done
+  if [[ "$missing" == true ]]; then
+    echo "[INFO] BWA index for ${ref_path} not found. Building..." >&2
+    bwa index "$ref_path"
+  fi
+  for ext in amb ann bwt pac sa; do
+    if [[ ! -f "${ref_path}.${ext}" ]]; then
+      echo "[ERROR] Failed to create BWA index (${ref_path}.${ext}). Ensure the index directory is writable." >&2
+      exit 1
+    fi
+  done
+}
+
+ensure_fasta_index() {
+  local ref_path="$1"
+  if [[ ! -f "${ref_path}.fai" ]]; then
+    echo "[INFO] FASTA index for ${ref_path} not found. Building..." >&2
+    samtools faidx "$ref_path"
+  fi
+  if [[ ! -f "${ref_path}.fai" ]]; then
+    echo "[ERROR] Failed to create FASTA index (${ref_path}.fai). Ensure the index directory is writable." >&2
+    exit 1
+  fi
+}
+
+ensure_bwa_index "$REF_FOR_ALIGN"
+ensure_fasta_index "$REF_FOR_ALIGN"
+=======
+# Step 0: ensure reference is indexed for alignment and pileup
+missing_index=false
+for ext in amb ann bwt pac sa; do
+  [[ -f "${REF}.${ext}" ]] || missing_index=true
+done
+
+if [[ "$missing_index" == true ]]; then
+  echo "[INFO] BWA index for ${REF} not found. Building..." >&2
+  bwa index "$REF"
+fi
+
+if [[ ! -f "${REF}.fai" ]]; then
+  echo "[INFO] FASTA index for ${REF} not found. Building..." >&2
+  samtools faidx "$REF"
+fi
+ main
+ main
+ main
+> main
+> main
 
 # Step 1: adapter and quality trimming
 cutadapt \
@@ -173,7 +319,7 @@ bwa mem \
   -O "${GAP_OPEN},${GAP_OPEN}" \
   -E "${GAP_EXT},${GAP_EXT}" \
   -L "$CLIP" \
-  "$REF" "${PREFIX}.trimmed_R1.fastq.gz" "${PREFIX}.trimmed_R2.fastq.gz" \
+  "$REF_FOR_ALIGN" "${PREFIX}.trimmed_R1.fastq.gz" "${PREFIX}.trimmed_R2.fastq.gz" \
   | samtools view -b -o "${PREFIX}.unsorted.bam" -
 
 samtools sort -n -@ "$THREADS" -o "${PREFIX}.namesort.bam" "${PREFIX}.unsorted.bam"
@@ -185,7 +331,39 @@ samtools index "${PREFIX}.sorted.markdup.bam"
 rm -f "${PREFIX}.unsorted.bam" "${PREFIX}.namesort.bam" "${PREFIX}.fixmate.bam" "${PREFIX}.positionsort.bam"
 
 # Step 3: variant calling with allele depths retained
+< codex/-miseq-t0x3ex
 bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
+=======
+<codex/-miseq-lvc8lw
+bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
+=======
+codex/-miseq-dogg7t
+bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
+=======
+ codex/-miseq-r8twkl
+bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
+=======
+ codex/-miseq-8g10ev
+bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
+=======
+codex/-miseq-kzyvu1
+bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
+=======
+codex/-miseq-1hofbl
+bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
+=======
+ codex/-miseq
+bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF" "${PREFIX}.sorted.markdup.bam" \
+=======
+bcftools mpileup -Ou -a AD,ADF,ADR,DP -f "$REF_FOR_ALIGN" "${PREFIX}.sorted.bam" \
+ main
+ main
+ main
+ main
+ main
+main
+> main
+> main
   | bcftools call -mv --ploidy 1 --keep-alts --multiallelic-caller -Oz -o "${PREFIX}.vcf.gz"
 bcftools index "${PREFIX}.vcf.gz"
 
@@ -195,6 +373,6 @@ bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%INFO/DP\t[%AD]\n' "${PREFIX
 bcftools stats "${PREFIX}.vcf.gz" > "${PREFIX}.vcf.stats.txt"
 
 # Step 4: consensus with IUPAC codes so low-frequency alleles remain represented
-bcftools consensus --iupac-codes -f "$REF" "${PREFIX}.vcf.gz" > "${PREFIX}.consensus.fasta"
+bcftools consensus --iupac-codes -f "$REF_FOR_ALIGN" "${PREFIX}.vcf.gz" > "${PREFIX}.consensus.fasta"
 
 echo "Pipeline complete. Outputs written with prefix ${PREFIX}".
