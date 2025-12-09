@@ -37,9 +37,24 @@ For paired-end 2×250 bp MiSeq reads from an IGHV amplicon aligned to a Sanger r
   --min-length 120
 ```
 
+< codex/-miseq-lvc8lw
 Use an output prefix such as `results/sample1` without a trailing slash; the scripts will normalize the prefix and create parent
 directories automatically so files land beside the chosen prefix rather than as hidden dotfiles.
 
+=======
+ codex/-miseq-dogg7t
+Use an output prefix such as `results/sample1` without a trailing slash; the scripts will normalize the prefix and create parent
+directories automatically so files land beside the chosen prefix rather than as hidden dotfiles.
+
+=======
+ codex/-miseq-r8twkl
+Use an output prefix such as `results/sample1` without a trailing slash; the scripts will normalize the prefix and create parent
+directories automatically so files land beside the chosen prefix rather than as hidden dotfiles.
+
+=======
+ main
+ main
+> main
 Outputs will include `results/sample1.sorted.markdup.bam` (+ index), `results/sample1.vcf.gz` with allele depths, `results/sample1.coverage.txt`, `results/sample1.variant_summary.tsv`, `results/sample1.vcf.stats.txt`, and `results/sample1.consensus.fasta` containing IUPAC symbols where minor alleles are detected.
 
 ## MiSeq-to-Sanger alignment for pre-trimmed reads
@@ -165,3 +180,62 @@ Use `scripts/ont_to_sanger.sh` to quality-filter ONT reads (via `filtlong`), ali
 ```
 
 Outputs include `results/sampleX.sorted.bam` (+ index) aligned with tuned clipping penalties, `results/sampleX.vcf.gz` with allele depths to retain minor variants, `results/sampleX.consensus.fasta` with IUPAC symbols, and optional racon/medaka polished FASTAs.
+
+## Hybrid ONT + MiSeq/Sanger assembly & validation pipeline
+
+Use `scripts/hybrid_assembly.sh` to assemble ONT reads with Flye, optionally scaffold with hybridSPAdes when MiSeq pairs are available, polish against MiSeq/Sanger alignments via Pilon, and emit QC/coverage summaries that highlight depth and allele retention in immune variable regions.
+
+```mermaid
+graph LR
+  A[ONT reads] -->|Flye| B[Flye contigs]
+  B -->|optional| C[hybridSPAdes scaffolds]
+  C -->|or| B
+  C --> D[Pilon polish (MiSeq/Sanger alignments)]
+  B --> D
+  D --> E[IUPAC consensus + QC]
+  E --> F[Coverage/variant retention reports]
+```
+
+### Requirements
+- `flye`
+- `minimap2`
+- `samtools`
+- `bcftools`
+- `pilon` (Java)
+- Optional: `spades.py` (hybridSPAdes), `gnuplot`
+
+### Why this workflow preserves immune variability
+- Flye tolerates ONT indels and retains long-range haplotypes across IGHV/IGKV regions.
+- hybridSPAdes scaffolding uses accurate MiSeq pairs to resolve repeats without collapsing long-range ONT signal.
+- Pilon polishing aligns MiSeq/Sanger reads back to the assembly while keeping alternate alleles for rare/low-frequency variants.
+- Post-assembly validation emits coverage-by-position tables, bcftools variant summaries with allele depths, and optional coverage plots to flag regions where depth drops could hide rare alleles.
+
+### Example commands
+
+**ONT-only contigs with MiSeq+Sanger polishing/QC**
+```bash
+./scripts/hybrid_assembly.sh \
+  -i data/ont_reads.fastq.gz \
+  -1 data/miseq_R1.fastq.gz \
+  -2 data/miseq_R2.fastq.gz \
+  -s references/sanger_targets.fa \
+  -o results/sample_hybrid \
+  --genome-size 3m \
+  --threads 12 \
+  --pilon-rounds 2
+```
+
+**ONT+MiSeq scaffolds with hybridSPAdes followed by Pilon**
+```bash
+./scripts/hybrid_assembly.sh \
+  -i data/ont_reads.fastq.gz \
+  -1 data/miseq_R1.fastq.gz \
+  -2 data/miseq_R2.fastq.gz \
+  -o results/sample_scaffolds \
+  --genome-size 3.2m \
+  --threads 16 \
+  --memory-gb 48 \
+  --pilon-rounds 1
+```
+
+Key outputs live under the chosen prefix (e.g., `results/sample_hybrid.*`): Flye and hybridSPAdes assemblies, Pilon-polished FASTAs, short-read/Sanger BAMs with indexes, VCF + IUPAC consensus to retain alternate alleles, coverage TSVs/PNG, and a `*.qc.summary.txt` with contig counts/N50.

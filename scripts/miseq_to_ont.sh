@@ -107,6 +107,7 @@ if [[ -z "${REF:-}" || -z "${READ1:-}" || -z "${READ2:-}" || -z "${PREFIX:-}" ]]
   exit 1
 fi
 
+< codex/-miseq-lvc8lw
   # Normalize the prefix to avoid hidden filenames when a trailing slash is supplied
   PREFIX="${PREFIX%/}"
   if [[ -z "$PREFIX" ]]; then
@@ -149,6 +150,40 @@ fi
   fi
   rm -f "${OUT_DIR}/.write_test"
 
+=======
+ codex/-miseq-dogg7t
+=======
+codex/-miseq-r8twkl
+ main
+# Normalize the prefix to avoid hidden filenames when a trailing slash is supplied
+PREFIX="${PREFIX%/}"
+if [[ -z "$PREFIX" ]]; then
+  echo "Error: output prefix cannot be empty after normalization." >&2
+  exit 1
+fi
+
+ codex/-miseq-dogg7t
+# Derive an output directory without invoking dirname (to avoid option parsing issues
+# when a prefix begins with '-'), and ensure it exists/writable
+OUT_DIR="${PREFIX%/*}"
+if [[ "$OUT_DIR" == "$PREFIX" ]]; then
+  OUT_DIR="."
+fi
+if ! mkdir -p "$OUT_DIR"; then
+  echo "Error: could not create output directory: $OUT_DIR" >&2
+  exit 1
+fi
+if ! touch "$OUT_DIR/.write_test" 2>/dev/null; then
+  echo "Error: output directory is not writable: $OUT_DIR" >&2
+  exit 1
+fi
+rm -f "$OUT_DIR/.write_test"
+
+=======
+=======
+main
+main
+> main
 for tool in cutadapt samtools bcftools; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "Error: '$tool' is not in PATH. Please install it or activate the appropriate environment." >&2
