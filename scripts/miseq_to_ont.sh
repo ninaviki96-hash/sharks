@@ -184,6 +184,20 @@ for f in "$REF" "$READ1" "$READ2"; do
   fi
 done
 
+if [[ "$ALIGNER" == "bwa" ]]; then
+  NEED_INDEX=false
+  for ext in amb ann bwt pac sa; do
+    if [[ ! -f "${REF}.${ext}" ]]; then
+      NEED_INDEX=true
+      break
+    fi
+  done
+  if [[ "$NEED_INDEX" == true ]]; then
+    echo "BWA index not found for $REF. Building index..."
+    bwa index "$REF"
+  fi
+fi
+
 if [[ -n "$DOWNSAMPLE" ]]; then
   if ! [[ "$DOWNSAMPLE" =~ ^0?\.[0-9]+$ ]]; then
     echo "--downsample-fraction must be between 0 and 1 (exclusive)." >&2
