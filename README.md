@@ -2,16 +2,16 @@
 
 cDNA processing kit for immunology.
 
-## MiSeq → ONT assembly + alignment pipeline
+## MiSeq → ONT alignment pipeline (ONT reads as reference)
 
-Use `scripts/assemble_and_map_miseq.sh` when you have raw ONT long reads (FASTQ/FASTA) and paired-end MiSeq data for the same target. The script first assembles the ONT reads into contigs (Flye by default, Miniasm+Racon as an option) and then trims + aligns the MiSeq reads to those contigs with duplicate marking, coverage/variant summaries, and an IUPAC consensus ready for downstream phylogenetics. Assembly is skipped automatically if `<prefix>.assembled_contigs.fasta` already exists.
+Use `scripts/assemble_and_map_miseq.sh` when you have ONT reads (FASTQ/FASTA) and paired-end MiSeq data for the same target. The script **does not assemble** ONT reads; instead, it treats them directly as the reference by converting to FASTA (if needed), indexing automatically for BWA, trimming MiSeq reads, aligning, and producing BAM/VCF/coverage/consensus artifacts ready for downstream phylogenetics.
 
 ### Requirements
 - `cutadapt`
-- `flye` **or** `minimap2 + miniasm + racon`
 - `bwa` **or** `minimap2`
 - `samtools`
 - `bcftools`
+- `python3` (to convert ONT FASTQ/FASTA into an indexable FASTA reference)
 
 ### Recommended parameters for high-sensitivity validation
 The defaults target high-sensitivity MiSeq alignment against noisy ONT assemblies while keeping rare variants:
@@ -27,7 +27,7 @@ The defaults target high-sensitivity MiSeq alignment against noisy ONT assemblie
 - Variant calling: haploid `bcftools call --ploidy 1 --keep-alts --multiallelic-caller` to keep alternate alleles and allele depths.
 
 ### Example command
-For 2×250 bp MiSeq reads aligned to contigs assembled from ONT FASTQ:
+For 2×250 bp MiSeq reads aligned directly to ONT reads provided as FASTQ:
 
 ```bash
 ./scripts/assemble_and_map_miseq.sh \
@@ -36,13 +36,12 @@ For 2×250 bp MiSeq reads aligned to contigs assembled from ONT FASTQ:
   -2 data/sample_R2.fastq.gz \
   -o results/sample1 \
   --threads 12 \
-  --assembler flye \
   --min-length 100
 ```
 
 Use an output prefix such as `results/sample1` without a trailing slash; the scripts will normalize the prefix and create parent directories automatically so files land beside the chosen prefix rather than as hidden dotfiles.
 
-Outputs include `results/sample1.assembled_contigs.fasta` (if built), `results/sample1.sorted.markdup.bam` (+ index), `results/sample1.alignment.flagstat.txt`, `results/sample1.vcf.gz` with allele depths, `results/sample1.coverage.tsv`, `results/sample1.variant_summary.tsv`, `results/sample1.vcf.stats.txt`, and `results/sample1.consensus.fasta` containing IUPAC symbols where minor alleles are detected.
+Outputs include a FASTA copy of the ONT reads (`results/sample1.ont_reference.fasta`), `results/sample1.sorted.markdup.bam` (+ index), `results/sample1.alignment.flagstat.txt`, `results/sample1.vcf.gz` with allele depths, `results/sample1.coverage.tsv`, `results/sample1.variant_summary.tsv`, `results/sample1.vcf.stats.txt`, and `results/sample1.consensus.fasta` containing IUPAC symbols where minor alleles are detected.
 
 ## MiSeq → Sanger unified pipeline
 

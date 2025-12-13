@@ -5,32 +5,30 @@ usage() {
   cat <<'USAGE'
 Usage: assemble_and_map_miseq.sh -r <ont_reads.(fa|fq|gz)> -1 <reads_R1.fastq.gz> -2 <reads_R2.fastq.gz> -o <output_prefix> [options]
 
-Stage 1: assemble raw ONT reads into contigs (Flye by default, or Miniasm+Racon), auto-detecting FASTA/FASTQ input.
-Stage 2: trim MiSeq reads, align to assembled contigs with BWA-MEM (default) or minimap2 -ax sr, and emit BAM/VCF/consensus artifacts for phylogenetics.
+Treat raw ONT reads (FASTA/FASTQ) as the reference, trim MiSeq reads, align with BWA-MEM (default) or minimap2 -ax sr, and emit BAM/VCF/consensus artifacts for phylogenetics.
 
 Required arguments:
-  -r, --ont-reads          Raw ONT reads (FASTA/FASTQ, optionally gzipped)
-  -1, --reads1             MiSeq R1 FASTQ (gzipped)
-  -2, --reads2             MiSeq R2 FASTQ (gzipped)
-  -o, --output-prefix      Prefix for outputs (e.g., results/sample1)
+  -r, --ont-reads         ONT reads FASTA/FASTQ (optionally gzipped) used directly as the reference
+  -1, --reads1            MiSeq R1 FASTQ (gzipped)
+  -2, --reads2            MiSeq R2 FASTQ (gzipped)
+  -o, --output-prefix     Prefix for outputs (e.g., results/sample1)
 
 Optional arguments:
-      --assembler          "flye" (default) or "miniasm" for ONT assembly
-      --adapter            Adapter sequence to trim (default: Illumina TruSeq)
-      --min-quality        Phred quality cutoff for 3' trimming (default: 20)
-      --min-length         Discard reads shorter than this after trimming (default: 100)
-      --threads            Number of CPU threads (default: 4)
-      --aligner            "bwa" (default) or "minimap2" for MiSeq alignment
-      --mismatch-penalty   BWA-MEM mismatch penalty -B (default: 3)
-      --gap-open-penalty   BWA-MEM gap open penalties -O (default: 6)
+      --adapter           Adapter sequence to trim (default: Illumina TruSeq)
+      --min-quality       Phred quality cutoff for 3' trimming (default: 20)
+      --min-length        Discard reads shorter than this after trimming (default: 100)
+      --threads           Number of CPU threads (default: 4)
+      --aligner           "bwa" (default) or "minimap2" for MiSeq alignment
+      --mismatch-penalty  BWA-MEM mismatch penalty -B (default: 3)
+      --gap-open-penalty  BWA-MEM gap open penalties -O (default: 6)
       --gap-extend-penalty BWA-MEM gap extension penalties -E (default: 1)
-      --clip-penalty       BWA-MEM clipping penalty -L (default: 5)
+      --clip-penalty      BWA-MEM clipping penalty -L (default: 5)
       --downsample-fraction Subsample alignments with samtools view -s (0-1, skipped if >=1 or unset)
-      --downsample-seed    Seed for samtools -s (integer, default: 42)
-  -h, --help               Show this help message
+      --downsample-seed   Seed for samtools -s (integer, default: 42)
+  -h, --help              Show this help message
 
 Outputs (using the provided prefix):
-  <prefix>.assembled_contigs.fasta (generated once if absent)
+  <prefix>.ont_reference.fasta (FASTA copy of ONT reads for indexing)
   <prefix>.trimmed_R1.fastq.gz / <prefix>.trimmed_R2.fastq.gz
   <prefix>.sorted.markdup.bam (+ .bai) with duplicates flagged (not removed)
   <prefix>.alignment.flagstat.txt from samtools flagstat for phylogenetic QC
@@ -40,7 +38,7 @@ Outputs (using the provided prefix):
   <prefix>.vcf.stats.txt from bcftools stats
   <prefix>.consensus.fasta (IUPAC-coded consensus so minor alleles are not collapsed)
 
-Dependencies: cutadapt, flye or (minimap2+miniasm+racon), bwa or minimap2, samtools, and bcftools must be installed and in PATH.
+Dependencies: cutadapt, bwa or minimap2, samtools, bcftools, and python3 must be installed and in PATH.
 USAGE
 }
 
@@ -49,7 +47,6 @@ MIN_QUAL=20
 MIN_LEN=100
 THREADS=4
 ALIGNER="bwa"
-ASSEMBLER="flye"
 MISMATCH=3
 GAP_OPEN=6
 GAP_EXT=1
@@ -72,8 +69,6 @@ while [[ $# -gt 0 ]]; do
       READ2="$2"; shift 2;;
     -o|--output-prefix)
       PREFIX="$2"; shift 2;;
-    --assembler)
-      ASSEMBLER="$2"; shift 2;;
     --adapter)
       ADAPTER="$2"; shift 2;;
     --min-quality)
@@ -152,32 +147,12 @@ if ! touch "${OUT_DIR}/.write_test" 2>/dev/null; then
 fi
 rm -f "${OUT_DIR}/.write_test"
 
-for tool in cutadapt samtools bcftools; do
+for tool in cutadapt samtools bcftools python3; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "Error: '$tool' is not in PATH. Please install it or activate the appropriate environment." >&2
     exit 1
   fi
 done
-
-case "$ASSEMBLER" in
-  flye)
-    if ! command -v flye >/dev/null 2>&1; then
-      echo "Error: 'flye' is required for --assembler flye." >&2
-      exit 1
-    fi
-    ;;
-  miniasm)
-    for tool in minimap2 miniasm racon; do
-      if ! command -v "$tool" >/dev/null 2>&1; then
-        echo "Error: '$tool' is required for --assembler miniasm." >&2
-        exit 1
-      fi
-    done
-    ;;
-  *)
-    echo "Unsupported assembler: $ASSEMBLER (choose 'flye' or 'miniasm')." >&2
-    exit 1;;
- esac
 
 if [[ "$ALIGNER" == "bwa" ]]; then
   if ! command -v bwa >/dev/null 2>&1; then
@@ -203,7 +178,7 @@ for f in "$ONT_READS" "$READ1" "$READ2"; do
     echo "Error: input file is not readable: $f" >&2
     exit 1
   fi
- done
+done
 
 if [[ -n "$DOWNSAMPLE" ]]; then
   if ! [[ "$DOWNSAMPLE" =~ ^0?\.[0-9]+$ ]]; then
@@ -220,47 +195,54 @@ PY
   DOWNSAMPLE_FMT="${DOWNSAMPLE_SEED}.${DOWNSAMPLE#0.}"
 fi
 
-ASSEMBLED_CONTIGS="${PREFIX}.assembled_contigs.fasta"
+REF_FASTA="${PREFIX}.ont_reference.fasta"
 
-if [[ -f "$ASSEMBLED_CONTIGS" ]]; then
-  echo "Found existing assembly at $ASSEMBLED_CONTIGS; skipping assembly stage."
-else
-  echo "Assembling ONT reads with $ASSEMBLER..."
-  if [[ "$ASSEMBLER" == "flye" ]]; then
-    FLYE_MODE="--nano-raw"
-    if [[ "$ONT_READS" =~ \.f(q|astq)(\.gz)?$ ]]; then
-      FLYE_MODE="--nano-raw"
-    elif [[ "$ONT_READS" =~ \.f(a|asta|na)(\.gz)?$ ]]; then
-      FLYE_MODE="--nano-raw"
-    else
-      # Peek at the first character to infer FASTA vs FASTQ when extension is ambiguous.
-      if head -c 1 "$ONT_READS" | grep -q '@'; then
-        FLYE_MODE="--nano-raw"
-      else
-        FLYE_MODE="--nano-raw"
-      fi
-    fi
-    flye $FLYE_MODE "$ONT_READS" --threads "$THREADS" --out-dir "${PREFIX}.flye"
-    if [[ ! -f "${PREFIX}.flye/assembly.fasta" ]]; then
-      echo "Error: Flye assembly failed; ${PREFIX}.flye/assembly.fasta not found." >&2
-      exit 1
-    fi
-    cp "${PREFIX}.flye/assembly.fasta" "$ASSEMBLED_CONTIGS"
-  else
-    minimap2 -x ava-ont -t "$THREADS" "$ONT_READS" "$ONT_READS" > "${PREFIX}.overlaps.paf"
-    miniasm -f "$ONT_READS" "${PREFIX}.overlaps.paf" > "${PREFIX}.miniasm.gfa"
-    awk '/^S/ {print ">"$2"\n"$3}' "${PREFIX}.miniasm.gfa" > "${PREFIX}.miniasm.raw.fasta"
-    minimap2 -t "$THREADS" -x map-ont "${PREFIX}.miniasm.raw.fasta" "$ONT_READS" > "${PREFIX}.reads_to_contigs.paf"
-    racon -t "$THREADS" "$ONT_READS" "${PREFIX}.reads_to_contigs.paf" "${PREFIX}.miniasm.raw.fasta" > "$ASSEMBLED_CONTIGS"
-    if [[ ! -s "$ASSEMBLED_CONTIGS" ]]; then
-      echo "Error: Miniasm+Racon assembly failed; output is empty." >&2
-      exit 1
-    fi
-  fi
-  echo "Assembly complete: $ASSEMBLED_CONTIGS"
+if [[ ! -s "$REF_FASTA" ]]; then
+  echo "Preparing ONT reads as FASTA reference: $REF_FASTA"
+  python3 - "$ONT_READS" "$REF_FASTA" <<'PY'
+import gzip
+import sys
+from pathlib import Path
+
+src = Path(sys.argv[1])
+dest = Path(sys.argv[2])
+
+def opener(path):
+    if path.suffix == '.gz':
+        return gzip.open(path, 'rt')
+    return open(path, 'r')
+
+with opener(src) as fh:
+    first = fh.read(1)
+    if not first:
+        sys.stderr.write(f"Error: input file {src} is empty.\n")
+        sys.exit(1)
+    fh.seek(0)
+    if first == '>':
+        with open(dest, 'w') as out:
+            for line in fh:
+                out.write(line)
+    elif first == '@':
+        with open(dest, 'w') as out:
+            while True:
+                header = fh.readline()
+                if not header:
+                    break
+                seq = fh.readline()
+                plus = fh.readline()
+                qual = fh.readline()
+                if not qual:
+                    sys.stderr.write("Error: FASTQ appears truncated.\n")
+                    sys.exit(1)
+                out.write('>' + header[1:])
+                out.write(seq)
+    else:
+        sys.stderr.write("Error: reference must be FASTA or FASTQ (optionally gzipped).\n")
+        sys.exit(1)
+PY
 fi
 
-REF="$ASSEMBLED_CONTIGS"
+REF="$REF_FASTA"
 
 if [[ "$ALIGNER" == "bwa" ]]; then
   NEED_INDEX=false
