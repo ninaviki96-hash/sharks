@@ -2,13 +2,54 @@
 
 cDNA processing kit for immunology.
 
-## MiSeq-to-Sanger alignment pipeline
+## MiSeq → ONT alignment pipeline (ONT reads as reference)
 
-Use `scripts/miseq_to_sanger.sh` to trim adapters, quality-filter MiSeq reads, align them to Sanger reference sequences, and emit both sorted BAM files and IUPAC-coded consensus FASTAs so low-frequency alleles remain represented instead of being collapsed away.
+Use `scripts/assemble_and_map_miseq.sh` when you have ONT reads (FASTQ/FASTA) and paired-end MiSeq data for the same target. The script **does not assemble** ONT reads; instead, it treats them directly as the reference by converting to FASTA (if needed), indexing automatically for BWA, trimming MiSeq reads, aligning, and producing BAM/VCF/coverage/consensus artifacts ready for downstream phylogenetics.
 
 ### Requirements
 - `cutadapt`
-- `bwa`
+- `bwa` **or** `minimap2`
+- `samtools`
+- `bcftools`
+- `python3` (to convert ONT FASTQ/FASTA into an indexable FASTA reference)
+
+### Recommended parameters for high-sensitivity validation
+The defaults target high-sensitivity MiSeq alignment against noisy ONT assemblies while keeping rare variants:
+- Adapter: Illumina TruSeq (`AGATCGGAAGAGCACACGTCTGAACTCCAGTCA`)
+- Quality/length filters: `--min-quality 20`, `--min-length 100`
+- Aligner: `--aligner bwa` (default) with permissive penalties for variable regions:
+  - `--mismatch-penalty 3` (drop to 2 for highly mutated loci)
+  - `--gap-open-penalty 6`, `--gap-extend-penalty 1`
+  - `--clip-penalty 5` (reduce to 3 to retain terminal variability)
+  Use `--aligner minimap2` for tolerant short-read mapping to long contigs when BWA-MEM struggles.
+- Coverage control: `--downsample-fraction 0.25 --downsample-seed 42` to cap extreme depth while preserving random representation of alleles.
+- Duplicate handling: duplicates are marked (not removed) via `samtools markdup -s` to avoid bias while preserving depth for minor alleles.
+- Variant calling: haploid `bcftools call --ploidy 1 --keep-alts --multiallelic-caller` to keep alternate alleles and allele depths.
+
+### Example command
+For 2×250 bp MiSeq reads aligned directly to ONT reads provided as FASTQ:
+
+```bash
+./scripts/assemble_and_map_miseq.sh \
+  -r data/ont_raw.fastq.gz \
+  -1 data/sample_R1.fastq.gz \
+  -2 data/sample_R2.fastq.gz \
+  -o results/sample1 \
+  --threads 12 \
+  --min-length 100
+```
+
+Use an output prefix such as `results/sample1` without a trailing slash; the scripts will normalize the prefix and create parent directories automatically so files land beside the chosen prefix rather than as hidden dotfiles.
+
+Outputs include a FASTA copy of the ONT reads (`results/sample1.ont_reference.fasta`), `results/sample1.sorted.markdup.bam` (+ index), `results/sample1.alignment.flagstat.txt`, `results/sample1.vcf.gz` with allele depths, `results/sample1.coverage.tsv`, `results/sample1.variant_summary.tsv`, `results/sample1.vcf.stats.txt`, and `results/sample1.consensus.fasta` containing IUPAC symbols where minor alleles are detected.
+
+## MiSeq → Sanger unified pipeline
+
+Use `scripts/miseq_to_sanger_unified.sh` to trim adapters, quality-filter MiSeq reads, align them to Sanger reference sequences with BWA-MEM (default) or minimap2, and emit the same BAM/coverage/variant/consensus artifacts as the ONT workflow. Only the MiSeq reads are trimmed; the Sanger references are used as-is.
+
+### Requirements
+- `cutadapt`
+- `bwa` or `minimap2`
 - `samtools`
 - `bcftools`
 
@@ -26,7 +67,7 @@ The defaults are tuned for typical 2×250 bp MiSeq runs against single-molecule 
 For paired-end 2×250 bp MiSeq reads from an IGHV amplicon aligned to a Sanger reference:
 
 ```bash
-./scripts/miseq_to_sanger.sh \
+./scripts/miseq_to_sanger_unified.sh \
   -r references/IGHV_Sanger.fa \
   -1 data/sample_R1.fastq.gz \
   -2 data/sample_R2.fastq.gz \
@@ -37,53 +78,7 @@ For paired-end 2×250 bp MiSeq reads from an IGHV amplicon aligned to a Sanger r
   --min-length 120
 ```
 
-Outputs will include `results/sample1.sorted.bam` (+ index), `results/sample1.vcf.gz` with allele depths, and `results/sample1.consensus.fasta` containing IUPAC symbols where minor alleles are detected.
-
-## MiSeq-to-ONT contig validation pipeline
-
-Use `scripts/miseq_to_ont.sh` to trim adapters, optionally down-sample, align MiSeq reads to ONT contigs with either minimap2 (`-ax sr`) or BWA-MEM, flag duplicates without removing them, and emit coverage/variant summaries to verify scaffold accuracy in variable regions.
-
-### Requirements
-- `cutadapt`
-- `minimap2` or `bwa`
-- `samtools`
-- `bcftools`
-
-### Recommended parameters for high-sensitivity validation
-- Adapter: Illumina TruSeq (`AGATCGGAAGAGCACACGTCTGAACTCCAGTCA`)
-- Quality/length filters: `--min-quality 20`, `--min-length 100` (keeps longer MiSeq inserts while removing short noisy tails)
-- Aligner: `--aligner minimap2` (default) for tolerant short-read mapping to ONT contigs; use `--aligner bwa` with permissive penalties for problematic regions:
-  - `--mismatch-penalty 3` (drop to 2 for SHM-rich segments)
-  - `--gap-open-penalty 6`, `--gap-extend-penalty 1`
-  - `--clip-penalty 5` (reduce to 3 to retain terminal variability)
-- Coverage control: `--downsample-fraction 0.25 --downsample-seed 42` to cap extreme depth while preserving random representation of alleles.
-- Duplicate handling: duplicates are marked (not removed) via `samtools markdup -s` to avoid over-amplification bias but still retain depth supporting minor alleles.
-- Variant calling: haploid `bcftools call --ploidy 1 --keep-alts --multiallelic-caller` to keep alternate alleles and allele depths.
-
-### Outputs
-Using an output prefix like `results/sample1`, the pipeline writes:
-- `results/sample1.sorted.markdup.bam` (+ `.bai`) with duplicates flagged
-- `results/sample1.vcf.gz` (+ `.tbi`) with allele depths
-- `results/sample1.coverage.txt` from `samtools coverage` to spot uneven depth
-- `results/sample1.variant_summary.tsv` (chrom, pos, ref, alt, QUAL, depth, AD)
-- `results/sample1.vcf.stats.txt` from `bcftools stats` for quick variant QC
-
-### Example command
-
-```bash
-./scripts/miseq_to_ont.sh \
-  -r ont_contigs/reference.fa \
-  -1 data/sample_R1.fastq.gz \
-  -2 data/sample_R2.fastq.gz \
-  -o results/sample1 \
-  --threads 8 \
-  --aligner minimap2 \
-  --min-length 100 \
-  --downsample-fraction 0.25 \
-  --clip-penalty 3
-```
-
-Outputs will include depth/variant summaries alongside BAM/VCF files to help confirm ONT scaffold correctness in variable regions without collapsing minor alleles.
+Outputs will include `results/sample1.sorted.markdup.bam` (+ index), `results/sample1.alignment.flagstat.txt`, `results/sample1.vcf.gz` with allele depths, `results/sample1.coverage.tsv`, `results/sample1.variant_summary.tsv`, `results/sample1.vcf.stats.txt`, and `results/sample1.consensus.fasta` containing IUPAC symbols where minor alleles are detected.
 
 ## ONT-to-Sanger alignment and polishing pipeline
 
